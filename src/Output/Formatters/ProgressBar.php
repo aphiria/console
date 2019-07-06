@@ -22,24 +22,24 @@ final class ProgressBar
 {
     /** @var int The maximum number of steps that can be taken */
     private int $maxSteps;
-    /** @var int The current progress */
-    private int $progress = 0;
-    /** @var ProgressBarFormatter The formatter that will draw the progress bar */
-    private ProgressBarFormatter $formatter;
+    /** @var int|null The current progress, or null if no progress has been made yet */
+    private ?int $progress = null;
+    /** @var IProgressBarObserver The observer that will draw the progress bar */
+    private IProgressBarObserver $observer;
 
     /**
      * @param int $maxSteps The max number of steps
-     * @param ProgressBarFormatter $formatter The formatter that will draw the progress bar
+     * @param IProgressBarObserver $observer The observer that will draw the progress bar
      * @throws InvalidArgumentException Thrown if the max steps are invalid
      */
-    public function __construct(int $maxSteps, ProgressBarFormatter $formatter)
+    public function __construct(int $maxSteps, IProgressBarObserver $observer)
     {
         if ($maxSteps <= 0) {
             throw new InvalidArgumentException('Max steps must be greater than 0');
         }
 
         $this->maxSteps = $maxSteps;
-        $this->formatter = $formatter;
+        $this->observer = $observer;
     }
 
     /**
@@ -50,7 +50,7 @@ final class ProgressBar
      */
     public function advance(int $step = 1): void
     {
-        $this->setProgress($this->progress + $step);
+        $this->setProgress(($this->progress ?? 0) + $step);
     }
 
     /**
@@ -83,7 +83,11 @@ final class ProgressBar
     {
         // Bound the progress between 0 and the max steps
         $prevProgress = $this->progress;
-        $this->progress = max(0, min($this->maxSteps, $progress));
-        $this->formatter->onProgress($prevProgress, $this->progress, $this->maxSteps);
+        $this->progress = max(0, min($this->maxSteps, $progress ?? 0));
+
+        // Don't call the observers if no progress was actually made
+        if ($prevProgress !== $this->progress) {
+            $this->observer->onProgress($prevProgress, $this->progress, $this->maxSteps);
+        }
     }
 }

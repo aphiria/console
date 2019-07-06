@@ -14,18 +14,19 @@ namespace Aphiria\Console\Output\Formatters;
 
 use Aphiria\Console\Output\IOutput;
 use DateTimeImmutable;
-use Exception;
 use InvalidArgumentException;
 
 /**
  * Defines the formatter for progress bars
  */
-final class ProgressBarFormatter
+final class ProgressBarFormatter implements IProgressBarObserver
 {
-    /** @const The width of the screen to fill */
-    private const PROGRESS_BAR_WIDTH = 80;
-    /** @var string The progress character */
-    public string $progressChar = '=';
+    /** @const The default width of the progress bar (including delimiters) */
+    private const DEFAULT_PROGRESS_BAR_WIDTH = 80;
+    /** @var int The progress bar width (including delimiters) */
+    private int $progressBarWidth;
+    /** @var string The completed progress character */
+    public string $completedProgressChar = '=';
     /** @var string The remaining progress character */
     public string $remainingProgressChar = '-';
     /** @var IOutput The output to draw to */
@@ -35,37 +36,44 @@ final class ProgressBarFormatter
     /** @var string The output string format */
     private ?string $outputFormat;
     /** @var int The frequency in seconds we redraw the progress bar */
-    private int $redrawFrequency = 1;
+    private int $redrawFrequency;
     /** @var bool Whether or not this is the first time we've output the progress bar */
     private bool $isFirstOutput = true;
 
     /**
      * @param IOutput $output The output to draw to
+     * @param int $progressBarWidth The width of the progress bar (including delimiters)
      * @param string|null $outputFormat The output format to use, or null if using the default
      *      Acceptable placeholders are 'progress', 'maxSteps', 'bar', and 'timeRemaining'
+     * @param int $redrawFrequency The frequency in seconds we redraw the progress bar
      * @throws InvalidArgumentException Thrown if the max steps are invalid
-     * @throws Exception Thrown if there was an unhandled exception creating the start time
      */
-    public function __construct(IOutput$output, string $outputFormat = null)
-    {
+    public function __construct(
+        IOutput$output,
+        int $progressBarWidth = self::DEFAULT_PROGRESS_BAR_WIDTH,
+        string $outputFormat = null,
+        int $redrawFrequency = 1
+    ) {
         $this->output = $output;
+        $this->progressBarWidth = $progressBarWidth;
         $this->outputFormat = $outputFormat ?? '%bar% %progress%/%maxSteps%' . PHP_EOL . 'Time remaining: %timeRemaining%';
+        $this->redrawFrequency = $redrawFrequency;
         $this->startTime = new DateTimeImmutable();
     }
 
     /**
-     * Handles an update to the progress
-     *
-     * @param int $prevProgress The previous progress
-     * @param int $currProgress The current progress
-     * @param int $maxSteps The max number of steps that can be taken
-     * @throws Exception Thrown if there was an error drawing the progress bar
+     * @inheritdoc
      */
-    public function onProgress(int $prevProgress, int $currProgress, int $maxSteps): void
+    public function onProgress(?int $prevProgress, int $currProgress, int $maxSteps): void
     {
-        // Only redraw if we've completed the progress or if it has been at least the redraw frequency since the last progress
-        $shouldRedraw = $prevProgress === $maxSteps
-            || floor($prevProgress / $this->redrawFrequency) !== floor($currProgress / $this->redrawFrequency);
+        /**
+         * Only redraw if we've completed the progress, we've made our first progress, or if it has been at least the
+         * redraw frequency since the last progress
+         */
+        $shouldRedraw = $currProgress === $maxSteps
+            || ($prevProgress === null && $currProgress !== null)
+            || $this->redrawFrequency === 0
+            || floor($currProgress / $this->redrawFrequency) !== floor(($prevProgress ?? 0) / $this->redrawFrequency);
 
         if ($shouldRedraw) {
             $this->output->write($this->formatOutput($currProgress, $maxSteps));
@@ -83,34 +91,35 @@ final class ProgressBarFormatter
      * @param int $progress The current progress
      * @param int $maxSteps The max steps that can be taken
      * @return string The formatted output string
-     * @throws Exception Thrown if there was an error formatting the output
      */
     private function formatOutput(int $progress, int $maxSteps): string
     {
         if ($progress === $maxSteps) {
             // Don't show the percentage anymore
-            $progressCompleteString = str_repeat($this->progressChar, self::PROGRESS_BAR_WIDTH - 2);
+            $completedProgressString = str_repeat($this->completedProgressChar, $this->progressBarWidth - 2);
             $progressLeftString = '';
         } else {
             $percentComplete = floor(100 * $progress / $maxSteps);
-            $paddedBarProgress = str_pad("$percentComplete%%", 3, $this->remainingProgressChar);
-            $progressCompleteString = str_repeat(
-                    $this->progressChar,
-                    max(0, floor($progress / $maxSteps * (self::PROGRESS_BAR_WIDTH - 2) - strlen($paddedBarProgress)))
-                ) . $paddedBarProgress;
+            $percentCompleteString = "$percentComplete%";
+            $completedProgressString = str_repeat(
+                    $this->completedProgressChar,
+                    (int)max(0, floor($progress / $maxSteps * ($this->progressBarWidth - 2) - strlen($percentCompleteString)))
+                ) . $percentCompleteString;
             $progressLeftString = str_repeat(
                 $this->remainingProgressChar,
-                self::PROGRESS_BAR_WIDTH - 1 - strlen($progressCompleteString)
+                max(0, $this->progressBarWidth - 2 - strlen($completedProgressString))
             );
         }
 
+        // Before sending the output through sprintf(), we have to encode literal '%' by replacing them with '%%'
         $compiledOutput = str_replace(
-            ['%progress%', '%maxSteps%', '%bar%', '%timeRemaining%'],
+            ['%progress%', '%maxSteps%', '%bar%', '%timeRemaining%', '%'],
             [
                 $progress,
                 $maxSteps,
-                '[' . $progressCompleteString . $progressLeftString . ']',
-                $this->getEstimatedTimeRemaining($progress, $maxSteps)
+                '[' . $completedProgressString . $progressLeftString . ']',
+                $this->getEstimatedTimeRemaining($progress, $maxSteps),
+                '%%'
             ],
             $this->outputFormat
         );
