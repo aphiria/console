@@ -5,29 +5,29 @@
  *
  * @link      https://www.aphiria.com
  * @copyright Copyright (C) 2020 David Young
- * @license   https://github.com/aphiria/aphiria/blob/0.x/LICENSE.md
+ * @license   https://github.com/aphiria/aphiria/blob/master/LICENSE.md
  */
 
 declare(strict_types=1);
 
-namespace Aphiria\Console\Tests\Commands\Annotations\Mocks\Finder;
+namespace Aphiria\Console\Tests\Commands\Attributes\Mocks;
 
-use Aphiria\Console\Commands\Annotations\Command;
+use Aphiria\Console\Commands\Attributes\Command;
 use Aphiria\Console\Commands\ICommandHandler;
 use Aphiria\Console\Input\Input;
 use Aphiria\Console\Output\IOutput;
 
 /**
- * Defines a mock command handler
- * @Command("a")
+ * Mocks a command handler with a non-command attribute
  */
-final class CommandHandlerA implements ICommandHandler
+#[NonCommand, Command('foo')]
+final class CommandHandlerWithNonCommandAttribute implements ICommandHandler
 {
     /**
      * @inheritdoc
      */
     public function handle(Input $input, IOutput $output)
     {
-        return;
+        // Don't do anything
     }
 }
